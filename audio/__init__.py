@@ -63,7 +63,7 @@ def heard_vowels(audio: str, text: str, progress=None) -> dict:
         except ValueError:
             pass
     from lexicon import WORD_RE, phones_for
-    from video import sync_from_alignment
+    from timing import sync_from_alignment
     from . import phonemes
     from .align import align_song, targets, vowel_scores
     from .phonemes import FRAME

@@ -6,8 +6,7 @@
 !/README.md
 !/requirements.txt
 !/tui.py
-!/upload_youtube.py
-!/video.py
+!/timing.py
 !/fetch.py
 !/stt.py
 !/editor.py
@@ -21,10 +20,6 @@
 !/term_render.py
 !/audio/
 !/rhyme/
-!/fonts/
 __pycache__/
 *.pyc
 /rhyme/__main__.py
-# YouTube credentials stay local
-client_secret*.json
-token.json

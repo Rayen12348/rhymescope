@@ -8,10 +8,8 @@ RhymeScope — interactive terminal app.
 Type a song name (or a local audio/lyrics file). RhymeScope downloads the
 audio (yt-dlp), fetches the real lyrics (Genius → LRCLIB → fallbacks),
 detects the rhyme scheme, syncs every word to the vocal with a Whisper
-alignment pass, then renders whatever you pick from the menu:
+alignment pass, then shows whatever you pick from the menu:
 
-    · YouTube video — 16:9, title card → verse → end screen
-    · TikTok video  — 9:16, lyrics-focused, whole song (verse clips on 'v')
     · karaoke       — plays the song, words reveal in sync
     · rhyme map     — color-coded, right in the terminal
 
@@ -38,6 +36,12 @@ from term_render import (BOLD, DIM, RESET, _fg, colored_line,
 ROOT = pathlib.Path(__file__).resolve().parent
 DOWNLOADS = ROOT / "downloads"
 
+try:
+    import studio               # optional local extras
+    studio.ui = sys.modules[__name__]
+except ImportError:
+    studio = None
+
 # RhymeScope brand: lime accent (terminals are dark, lime is the brand's
 # one accent colour)
 ACCENT = _fg("#CBF135")
@@ -48,7 +52,7 @@ _BANNER = f"""
   {BOLD}╦═╗┬ ┬┬ ┬┌┬┐┌─┐{RESET}{ACCENT}{BOLD}┌─┐┌─┐┌─┐┌─┐┌─┐{RESET}
   {BOLD}╠╦╝├─┤└┬┘│││├┤ {RESET}{ACCENT}{BOLD}└─┐│  │ │├─┤├┤{RESET}
   {BOLD}╩╚═┴ ┴ ┴ ┴ ┴└─┘{RESET}{ACCENT}{BOLD}└─┘└─┘└─┘┴ ┴└─┘{RESET}
-  {DIM}◎ rhyme maps · karaoke · YouTube & TikTok videos{RESET}
+  {DIM}◎ rhyme maps · karaoke{RESET}
 """
 
 
@@ -119,7 +123,7 @@ class Song:
             # asked, and nothing ever asked.
             if p.suffix.lower() in AUDIO_EXT:
                 try:
-                    from video import _audio_duration
+                    from timing import _audio_duration
                     duration = _audio_duration(p) or None
                 except Exception:
                     duration = None
@@ -281,7 +285,7 @@ class Song:
         self.analysis = overrides.apply(scored, state, level)
         self.edited = bool(state["edits"])
 
-    # -- timing (lazy, Whisper transcription shared via video._listen) -----
+    # -- timing (lazy, Whisper transcription shared via timing._listen) -----
 
     def start_listening(self) -> None:
         """Start the slow part NOW, in the background.
@@ -309,7 +313,7 @@ class Song:
 
         def work():
             try:
-                from video import _listen
+                from timing import _listen
                 _listen(self.src, self.opts.model, self.opts.language,
                         progress=progress)
                 # …then hear WHICH vowels were sung, so rhymes the rapper
@@ -406,7 +410,7 @@ class Song:
         if self.sync is not None:
             return
         self._wait_listening()
-        from video import sync_from_alignment
+        from timing import sync_from_alignment
         _step("~", "Timing the lyrics from the audio (Whisper) …")
         rep: dict = {}
         self.sync = sync_from_alignment(
@@ -435,7 +439,7 @@ class Song:
         recording actually is, using what Whisper heard. Returns True when
         better lyrics were found and adopted."""
         try:
-            from video import _listen
+            from timing import _listen
             heard = _listen(self.src, self.opts.model, self.opts.language)
         except Exception:
             return False
@@ -463,7 +467,7 @@ class Song:
         if self._aligned:
             return
         self._wait_listening()
-        from video import align_word_times
+        from timing import align_word_times
         _fam, wbl = syllable_map(self.analysis)
         _step("~", "Aligning every word to the vocal …")
         sched = align_word_times(self.src, self.sync, wbl,
@@ -489,136 +493,6 @@ class Song:
 
 def show_map(song: Song) -> None:
     print(render_terminal(song.analysis, title=song.title, source=song.source))
-
-
-def _perf_clip(song: Song) -> pathlib.Path | None:
-    """The performance video composited into the clip slot, if one is set."""
-    raw = getattr(song.opts, "clip", None)
-    if not raw:
-        return None
-    p = pathlib.Path(raw).expanduser()
-    if not p.exists():
-        print(f"{RED}✗ performance clip not found: {p} — rendering "
-              f"without it{RESET}")
-        return None
-    return p
-
-
-def youtube_video(song: Song, theme: str) -> list:
-    from video import make_video
-    song.ensure_schedule()
-    out = song.src.with_suffix(".rhymes.mp4")
-    make_video(song.analysis, song.sync, song.src, song.title, out,
-               theme=theme, schedule=song.schedule, format="youtube",
-               clip=_perf_clip(song))
-    song.rendered = True
-    print(f"{GREEN}✓{RESET} YouTube video → {BOLD}{out.name}{RESET}")
-    return [out]
-
-
-def tiktok_video(song: Song, theme: str) -> list:
-    """The whole song as one 9:16 video — the default vertical output."""
-    from video import make_video
-    song.ensure_schedule()
-    out = song.src.with_suffix(".tiktok.mp4")
-    make_video(song.analysis, song.sync, song.src, song.title, out,
-               theme=theme, schedule=song.schedule, format="tiktok",
-               clip=_perf_clip(song), ep=getattr(song.opts, "ep", None))
-    song.rendered = True
-    print(f"{GREEN}✓{RESET} TikTok video → {BOLD}{out.name}{RESET}")
-    return [out]
-
-
-def _mmss(t: float) -> str:
-    return f"{int(t) // 60}:{int(t) % 60:02d}"
-
-
-def render_range(song: Song, theme: str, raw: str, fmt: str = "tiktok") -> list:
-    """Render just the window `raw` ('1:02-3:07') of the song — cut from
-    the whole song's map, so your corrections and colours carry over."""
-    from video import make_clip, parse_range, _audio_duration
-    song.ensure_schedule()
-    t0, t1 = parse_range(raw, _audio_duration(song.src))
-    tag = (f"{int(t0) // 60}m{int(t0) % 60:02d}"
-           f"-{int(t1) // 60}m{int(t1) % 60:02d}")
-    out = song.src.with_suffix(f".{tag}.{fmt}.mp4")
-    print(f"  {DIM}rendering {_mmss(t0)}–{_mmss(t1)} "
-          f"({t1 - t0:.0f}s, {fmt}){RESET}")
-    make_clip(song.analysis, song.sync, song.src, song.title, out,
-              t0, t1, theme=theme, schedule=song.schedule, format=fmt,
-              clip=_perf_clip(song), ep=getattr(song.opts, "ep", None))
-    song.rendered = True
-    print(f"{GREEN}✓{RESET} clip → {BOLD}{out.name}{RESET}")
-    return [out]
-
-
-def range_video(song: Song, theme: str) -> None:
-    """Menu action: ask for a time range, then render it."""
-    from video import _audio_duration
-    duration = _audio_duration(song.src)
-    print(f"\n  {DIM}song is {_mmss(duration)} long · examples: "
-          f"{RESET}1:02-3:07{DIM} · {RESET}0:45-1:30{DIM} · "
-          f"{RESET}2:10-{DIM} (to the end){RESET}")
-    try:
-        raw = input(f"  {ACCENT}range >{RESET} ").strip()
-        if not raw:
-            return
-        pick = input(f"  {ACCENT}format >{RESET} {DIM}[t] 9:16 TikTok "
-                     f"(default)  [y] 16:9 YouTube{RESET} ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return
-    try:
-        render_range(song, theme, raw,
-                     "youtube" if pick.startswith("y") else "tiktok")
-    except (ValueError, RuntimeError) as exc:
-        print(f"{RED}✗ {exc}{RESET}")
-
-
-def tiktok_clips(song: Song, theme: str) -> list:
-    """One 9:16 clip per verse — for posting a song as a series."""
-    from video import make_verse_videos
-    song.ensure_schedule()
-    outs = make_verse_videos(song.analysis, song.sync, song.src, song.title,
-                             song.src, theme=theme, schedule=song.schedule,
-                             format="tiktok", clip=_perf_clip(song),
-                             ep=getattr(song.opts, "ep", None))
-    for o in outs:
-        print(f"{GREEN}✓{RESET} TikTok clip → {BOLD}{o.name}{RESET}")
-    if outs:
-        song.rendered = True
-    else:
-        print(f"{RED}✗ no verses long enough to clip{RESET}")
-    return outs
-
-
-_RANGE_OUT = re.compile(r"\.(\d+)m(\d\d)-(\d+)m(\d\d)\.(tiktok|youtube)\.mp4$")
-
-
-def made_videos(song: Song) -> list:
-    """The videos already rendered for this song, as (label, re-render)
-    pairs — so a correction can be pushed into all of them at once."""
-    stem, folder = song.src.stem, song.src.parent
-    names = {f.name for f in folder.glob(glob_escape(stem) + ".*.mp4")}
-    jobs: list = []
-    if f"{stem}.rhymes.mp4" in names:
-        jobs.append(("YouTube video", lambda th: youtube_video(song, th)))
-    if f"{stem}.tiktok.mp4" in names:
-        jobs.append(("TikTok video", lambda th: tiktok_video(song, th)))
-    verses = sorted(n for n in names
-                    if re.fullmatch(re.escape(stem) + r"\.verse\d+\.tiktok\.mp4", n))
-    if verses:
-        jobs.append((f"{len(verses)} verse clip{'s' if len(verses) > 1 else ''}",
-                     lambda th: tiktok_clips(song, th)))
-    for n in sorted(names):
-        m = _RANGE_OUT.search(n)
-        if m and n.startswith(stem + "."):
-            raw = f"{int(m[1])}:{m[2]}-{int(m[3])}:{m[4]}"
-            fmt = m[5]
-            jobs.append((f"clip {raw} ({fmt})",
-                         lambda th, raw=raw, fmt=fmt:
-                         render_range(song, th, raw, fmt)))
-    return jobs
 
 
 def corrected_lyrics(src, fetched: str) -> str | None:
@@ -680,24 +554,14 @@ def change_density(song: Song, d: int) -> None:
     print(f"  {GREEN}✓{RESET} density {density_name(song)} · "
           f"{st['density']:.0%} of syllables lit · {st['families']} rhymes"
           f"{DIM}  (saved for this song){RESET}")
-    if made_videos(song):
+    if studio and studio.made_videos(song):
         print(f"  {DIM}videos you already made keep the old setting until "
               f"you re-render them{RESET}")
 
 
 def edit_rhymes(song: Song, theme: str = "light") -> None:
-    """Fix the rhyme map by hand, here in the terminal — then push the fix
-    into the videos you've already made.
-
-    That second half is the point. A correction lives in a file beside the
-    audio; a video on disk is a picture of the map at the moment it was
-    rendered, and it does not change on its own. Saving a fix and then
-    watching the old file is exactly how a correction "didn't work" — so
-    when you close the editor with changes, every video already rendered
-    for this song is offered for re-rendering, in one go.
-
-    It cannot disturb the video's timing: the editor only ever produces
-    syllable→rhyme assignments, and sync is computed on a separate path."""
+    """Fix the rhyme map by hand, here in the terminal. A correction is
+    saved beside the audio and every later analysis of the song uses it."""
     import editor
     import overrides
     before = overrides.load(song.src)
@@ -732,28 +596,8 @@ def edit_rhymes(song: Song, theme: str = "light") -> None:
     print(f"  {GREEN}✓{RESET} saved · {n} correction{'' if n == 1 else 's'} · "
           f"{st['families']} rhymes · {st['density']:.0%} of syllables lit")
 
-    jobs = made_videos(song)
-    if not jobs:
-        print(f"  {DIM}every video you make from now on includes it "
-              f"(1 / 2 / 3 / c / v){RESET}")
-        return
-    print(f"\n  {BOLD}Your videos still show the old map:{RESET} "
-          + ", ".join(label for label, _j in jobs))
-    try:
-        ans = input(f"  {ACCENT}re-render them now with your fixes? "
-                    f"[Y/n] >{RESET} ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return
-    if ans in ("", "y", "yes"):
-        for label, job in jobs:
-            print(f"  {DIM}re-rendering {label} …{RESET}")
-            try:
-                job(theme)
-            except Exception as exc:
-                print(f"  {RED}✗ {label}: {exc}{RESET}")
-    else:
-        print(f"  {DIM}ok — re-render any time and the fixes are in{RESET}")
+    if studio:
+        studio.after_edit(song, theme)
 
 
 def karaoke(song: Song) -> None:
@@ -762,7 +606,7 @@ def karaoke(song: Song) -> None:
         print(f"{RED}✗ ffplay not found (install ffmpeg){RESET}")
         return
     song.ensure_schedule()
-    from video import word_schedule
+    from timing import word_schedule
 
     colors = _palette(song.analysis)
     fam_at, wbl = syllable_map(song.analysis)
@@ -809,73 +653,12 @@ def karaoke(song: Song) -> None:
             player.terminate()
 
 
-def album_mode(name: str, opts, theme: list) -> None:
-    """Render a YouTube rhyme video for every track of an album.
-    Tracks that already have a .rhymes.mp4 are skipped, so an interrupted
-    album run resumes where it stopped."""
-    _step(1, f"Looking up album {BOLD}{name}{RESET} …")
-    hit = fetch_mod.album_tracks(name)
-    if not hit:
-        print(f"  {RED}✗ couldn't find that album{RESET}")
-        return
-    album, artist, tracks = hit
-    print(f"    {GREEN}✓{RESET} {BOLD}{album}{RESET} — {artist} "
-          f"({len(tracks)} tracks)")
-    for k, tr in enumerate(tracks, 1):
-        print(f"    {DIM}{k:2}. {tr}{RESET}")
-
-    done, skipped, failed = [], [], []
-    for k, tr in enumerate(tracks, 1):
-        print(f"\n{ACCENT}━━ track {k}/{len(tracks)}{RESET} "
-              f"{BOLD}{tr}{RESET}")
-        song = Song(opts)
-        try:
-            song.load(f"{artist} {tr}")
-            out = song.src.with_suffix(".rhymes.mp4")
-            if out.exists():
-                print(f"    {DIM}already rendered — skipping "
-                      f"(delete {out.name} to redo){RESET}")
-                skipped.append(tr)
-                continue
-            youtube_video(song, theme[0])
-            cleanup(song)
-            done.append(tr)
-        except KeyboardInterrupt:
-            print(f"\n{DIM}album run stopped — rerun the same album to "
-                  f"resume.{RESET}")
-            break
-        except Exception as exc:
-            print(f"  {RED}✗ {exc}{RESET}")
-            failed.append(tr)
-
-    print(f"\n{BOLD}{album}{RESET} — {GREEN}{len(done)} rendered{RESET}"
-          + (f" · {len(skipped)} already done" if skipped else "")
-          + (f" · {RED}{len(failed)} failed{RESET}" if failed else ""))
-    for tr in failed:
-        print(f"    {RED}✗{RESET} {tr}")
-
-
 def save_html(song: Song) -> None:
     out = song.src.with_suffix(".rhymes.html")
     out.write_text(render_html(song.analysis, title=song.title),
                    encoding="utf-8")
     song.html_saved = True
     print(f"{GREEN}✓{RESET} HTML map → {BOLD}{out}{RESET}")
-
-
-def upload_video(song: Song) -> None:
-    out = song.src.with_suffix(".rhymes.mp4")
-    if not out.exists():
-        print(f"{RED}✗ no rendered video yet — render the YouTube video "
-              f"first (option 1){RESET}")
-        return
-    print(f"{DIM}uploading {out.name} … (needs one-time Google OAuth — "
-          f"see upload_youtube.py){RESET}")
-    r = subprocess.run(
-        [sys.executable, str(ROOT / "upload_youtube.py"), str(out),
-         "--title", f"{song.title} — rhyme map"])
-    if r.returncode:
-        print(f"{RED}✗ upload failed (see message above){RESET}")
 
 
 def shift_offset(song: Song) -> None:
@@ -948,24 +731,20 @@ def _settings(song: Song, theme: list) -> None:
         o = song.opts
         print(f"""
   {DIM}settings{RESET}
-    {ACCENT}t{RESET}  theme            {theme[0]}  {DIM}(light=paper · dark=ink · 9:16 and the with-clip 16:9){RESET}
-    {ACCENT}e{RESET}  episode          {getattr(o, 'ep', None) or DIM + 'none' + RESET}  {DIM}(9:16 header){RESET}
-    {ACCENT}d{RESET}  density          {getattr(o, 'density', 'rich')}  {DIM}(clean · balanced · rich · everything — per song in the editor){RESET}
+{studio.settings_top(theme[0], o) if studio else ''}    {ACCENT}d{RESET}  density          {getattr(o, 'density', 'rich')}  {DIM}(clean · balanced · rich · everything — per song in the editor){RESET}
     {ACCENT}s{RESET}  strict rhymes    {'on' if o.strict else 'off'}
     {ACCENT}w{RESET}  whisper model    {o.model}
-    {ACCENT}p{RESET}  performance clip {getattr(o, 'clip', None) or DIM + 'none' + RESET}
-    {ACCENT}o{RESET}  nudge lyric timing
+{studio.settings_mid(o) if studio else ''}    {ACCENT}o{RESET}  nudge lyric timing
     {ACCENT}h{RESET}  save HTML map
-    {ACCENT}u{RESET}  upload video to YouTube
-    {ACCENT}b{RESET}  back""")
+{studio.settings_end() if studio else ''}    {ACCENT}b{RESET}  back""")
         try:
             c = input(f"\n{ACCENT}set >{RESET} ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             print()
             return
         try:
-            if c == "t":
-                theme[0] = "dark" if theme[0] == "light" else "light"
+            if studio and studio.setting(c, song, theme):
+                pass
             elif c == "d":
                 order = ["clean", "balanced", "rich", "everything"]
                 cur = getattr(o, "density", "rich")
@@ -982,23 +761,10 @@ def _settings(song: Song, theme: list) -> None:
                            if o.model in _MODELS else "small")
                 print(f"{GREEN}✓{RESET} whisper model: {o.model}"
                       f"{DIM} (next listening pass){RESET}")
-            elif c == "p":
-                raw = input(f"  {ACCENT}clip path (empty to clear) >"
-                            f"{RESET} ").strip()
-                o.clip = raw or None
-                if o.clip and not pathlib.Path(o.clip).expanduser().exists():
-                    print(f"  {RED}✗ file not found — cleared{RESET}")
-                    o.clip = None
-            elif c == "e":
-                raw = input(f"  {ACCENT}episode number (empty to clear) >"
-                            f"{RESET} ").strip()
-                o.ep = raw or None
             elif c == "o":
                 shift_offset(song)
             elif c == "h":
                 save_html(song)
-            elif c == "u":
-                upload_video(song)
             elif c in ("b", "", "q"):
                 return
         except Exception as exc:
@@ -1020,12 +786,7 @@ def menu(song: Song, theme: list) -> bool:
               f"""{f' · {corrections(song)} of your fixes' if song.edited else ''}{RESET}"""
               f"""{chr(10) + '  ' + DIM + '◷ ' + song.listening_note() + RESET if song.listening_note() else ''}
 
-    {ACCENT}1{RESET}  make YouTube video   {DIM}16:9{RESET}
-    {ACCENT}2{RESET}  make TikTok video    {DIM}9:16, whole song{RESET}
-    {ACCENT}3{RESET}  make both
-    {ACCENT}c{RESET}  clip a time range    {DIM}e.g. 1:02-3:07{RESET}
-    {ACCENT}v{RESET}  TikTok verse clips   {DIM}9:16, one file per verse{RESET}
-    {ACCENT}4{RESET}  play along           {DIM}music + synced lyrics{RESET}
+{studio.menu_rows() if studio else ''}    {ACCENT}4{RESET}  play along           {DIM}music + synced lyrics{RESET}
     {ACCENT}5{RESET}  show rhyme map       {DIM}here in the terminal{RESET}
     {ACCENT}6{RESET}  fix the rhymes       {DIM}paint · erase · review, right here{RESET}
 
@@ -1037,17 +798,8 @@ def menu(song: Song, theme: list) -> bool:
             cleanup(song)
             return False
         try:
-            if c == "1":
-                youtube_video(song, theme[0])
-            elif c == "2":
-                tiktok_video(song, theme[0])
-            elif c == "3":
-                youtube_video(song, theme[0])
-                tiktok_video(song, theme[0])
-            elif c == "c":
-                range_video(song, theme[0])
-            elif c == "v":
-                tiktok_clips(song, theme[0])
+            if studio and studio.action(c, song, theme):
+                pass
             elif c == "4":
                 karaoke(song)
             elif c == "5":
@@ -1090,31 +842,18 @@ def main() -> None:
                     help="don't write the .rhymes.html map")
     ap.add_argument("--offset", type=float, default=0.0,
                     help="shift lyric timing by N seconds (positive = later)")
-    ap.add_argument("--ep", help='episode number for the 9:16 header, '
-                                 'e.g. "41" → EP. 041')
-    ap.add_argument("--theme", default="light", choices=["light", "dark"],
-                    help="9:16 variant: light=1b paper, dark=1a ink "
-                         "(default light; the 16:9 frames have one look)")
-    ap.add_argument("--clip", default=None, metavar="VIDEO",
-                    help="performance video composited into the clip slot "
-                         "(its timeline must match the audio)")
-    ap.add_argument("--range", default=None, metavar="A-B",
-                    help="render only this part of the song, e.g. 1:02-3:07 "
-                         "(open end allowed: 2:10-). Skips the menu.")
-    # literal rather than video.FORMATS: video pulls in PIL, and the menu
-    # keeps that import lazy so startup stays instant
-    ap.add_argument("--format", default="tiktok",
-                    choices=["tiktok", "youtube", "instagram"],
-                    help="output shape for --range (default tiktok/9:16)")
+    if studio:
+        studio.add_args(ap)
     opts = ap.parse_args()
-    theme = [opts.theme]
+    theme = [getattr(opts, "theme", "light")]
 
     print(_BANNER)
     pending = opts.input
     while True:
         if pending is None:
             print(f"  {DIM}Type a song name (e.g. “Kendrick Lamar - HUMBLE”),"
-                  f" a file path, “album <name>” for a whole album,"
+                  f" a file path,"
+                  + (" “album <name>” for a whole album," if studio else "") +
                   f" or 'q' to quit.{RESET}")
             try:
                 pending = input(f"\n{ACCENT}♪ >{RESET} ").strip()
@@ -1126,8 +865,8 @@ def main() -> None:
             if pending.lower() in ("q", "quit", "exit"):
                 break
         low = pending.lower()
-        if low.startswith(("album ", "album:")):
-            album_mode(pending[6:].strip(" :"), opts, theme)
+        if studio and low.startswith(("album ", "album:")):
+            studio.album_mode(pending[6:].strip(" :"), opts, theme)
             pending = None
             continue
         song = Song(opts)
@@ -1138,13 +877,7 @@ def main() -> None:
             pending = None
             continue
         pending = None
-        if opts.range:
-            # one-shot: render the named window and exit, so a clip can be
-            # produced from a script without touching the menu
-            try:
-                render_range(song, theme[0], opts.range, opts.format)
-            except Exception as exc:
-                print(f"  {RED}✗ {exc}{RESET}")
+        if studio and studio.one_shot(song, opts, theme):
             break
         if not menu(song, theme):
             break

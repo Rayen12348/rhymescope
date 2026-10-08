@@ -4,9 +4,6 @@ faster-whisper>=1.0
 yt-dlp
 requests>=2.31
 numpy
-pillow>=10
-google-api-python-client
-google-auth-oauthlib
 
 # Optional, but the single biggest quality win when a song has no lyrics
 # online: demucs separates the vocal from the beat before transcription,

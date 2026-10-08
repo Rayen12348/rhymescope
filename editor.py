@@ -247,7 +247,7 @@ def build_model(analysis, color_by_gid: dict) -> dict:
         lines.append({"chunks": chunks, "tail": text[cursor:]})
 
     from palette import highlighter_pool
-    from video import HIGHLIGHTERS
+    from timing import HIGHLIGHTERS
     pool = highlighter_pool(len(fams) + 10, tuple(HIGHLIGHTERS))
     spare = [c for c in pool if c not in color_by_gid.values()][-8:]
 
@@ -1316,7 +1316,7 @@ def open_session(src: pathlib.Path, text: str, title: str,
     """Build an editing session for a song, with the colours a render
     would use right now — the ones on screen are the ones you get."""
     from palette import highlighter_pool
-    from video import HIGHLIGHTERS, _palette
+    from timing import HIGHLIGHTERS, _palette
 
     state = O.load(src)
     if state["sensitivity"] is not None:

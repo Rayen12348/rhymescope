@@ -8,7 +8,6 @@ rhyme family in its own color. Output it as:
 
 - a **rhyme map** in the terminal or as HTML
 - **karaoke**: the song plays while the words light up in sync
-- a **YouTube video** (16:9) or **TikTok video** (9:16): whole song, one clip per verse, or any time range
 
 ## Install
 
@@ -33,18 +32,12 @@ python tui.py song.mp3                     # or a local file
 ```
 
 ```
-    1  make YouTube video   16:9
-    2  make TikTok video    9:16, whole song
-    3  make both
-    c  clip a time range    e.g. 1:02-3:07
-    v  TikTok verse clips   9:16, one file per verse
     4  play along           music + synced lyrics
     5  show rhyme map       here in the terminal
     6  fix the rhymes       paint the map, right here
 ```
 
-Type `album <name>` at the prompt to process a whole album. Run
-`python tui.py --help` for all options (theme, Whisper model, density, offset…).
+Run `python tui.py --help` for all options (Whisper model, density, offset…).
 
 ## How it works
 
@@ -53,22 +46,12 @@ Type `album <name>` at the prompt to process a whole album. Run
    against the song. Whisper transcribes the audio as a last resort.
 3. **Rhymes**: each word is turned into phonemes (CMU dictionary plus rap
    spellings), and rhymes are matched on stressed vowel runs across nearby bars.
-4. **Sync**: every word is aligned to the vocal, then rendered.
+4. **Sync**: every word is aligned to the vocal.
 
 Corrections you make in the editor (menu `6`) are saved and applied to every
-render.
-
-## Upload to YouTube (optional)
-
-```bash
-python upload_youtube.py "song.rhymes.mp4" --title "Lose Yourself — rhyme map"
-```
-
-Needs a one-time Google OAuth setup; the steps are at the top of
-`upload_youtube.py`. Keep `client_secret.json` and `token.json` private (they
-are git-ignored).
+map of that song.
 
 ## License
 
-Code: [MIT](LICENSE). Fonts: SIL Open Font License, see [fonts/OFL.txt](fonts/OFL.txt).
+[MIT](LICENSE).
 Respect the terms of the sites RhymeScope reads from and the rights of the artists.
