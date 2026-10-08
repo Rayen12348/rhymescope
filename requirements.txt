@@ -1,0 +1,16 @@
+pronouncing>=0.2.0
+pyphen>=0.14
+faster-whisper>=1.0
+yt-dlp
+requests>=2.31
+numpy
+pillow>=10
+google-api-python-client
+google-auth-oauthlib
+
+# Optional, but the single biggest quality win when a song has no lyrics
+# online: demucs separates the vocal from the beat before transcription,
+# which took the test track from 73% of the song heard to 99%. It pulls in
+# torch, so it is not installed by default.
+#   pip install demucs
+

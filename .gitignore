@@ -1,0 +1,30 @@
+# Allowlist: only what RhymeScope needs to run is published.
+/*
+!/.gitignore
+!/.github/
+!/LICENSE
+!/README.md
+!/requirements.txt
+!/tui.py
+!/upload_youtube.py
+!/video.py
+!/fetch.py
+!/stt.py
+!/editor.py
+!/overrides.py
+!/confidence.py
+!/learn.py
+!/lexicon.py
+!/palette.py
+!/rhyme_engine.py
+!/html_render.py
+!/term_render.py
+!/audio/
+!/rhyme/
+!/fonts/
+__pycache__/
+*.pyc
+/rhyme/__main__.py
+# YouTube credentials stay local
+client_secret*.json
+token.json

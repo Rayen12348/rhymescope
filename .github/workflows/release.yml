@@ -1,0 +1,20 @@
+name: release
+
+# Push a tag like v1.0.0 to publish a GitHub Release with a source archive.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=zip --prefix=rhymescope/ -o rhymescope-${GITHUB_REF_NAME}.zip HEAD
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: rhymescope-*.zip
+          generate_release_notes: true
